@@ -1,0 +1,255 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Dictation App</title>
+    <link rel="stylesheet" href="/index.css">
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap"
+      rel="stylesheet"
+    />
+    <script type="importmap">
+      {
+        "imports": {
+          "@google/genai": "https://esm.sh/@google/genai@^0.8.0",
+          "marked": "https://esm.sh/marked@^4.0.0"
+        }
+      }
+    </script>
+  </head>
+  <body>
+    <div class="app-container">
+      <div class="main-content">
+        <div class="note-area">
+          <div class="note-header">
+            <div class="editor-title" contenteditable="true" placeholder="Untitled Note">
+              Untitled Note
+            </div>
+            <div class="tab-navigation-container">
+              <div class="tab-navigation">
+                <button class="tab-button" data-tab="audio">Audio</button>
+                <button class="tab-button active" data-tab="raw">Raw</button>
+                <button class="tab-button" data-tab="source">Source</button>
+                <div class="active-tab-indicator"></div>
+              </div>
+            </div>
+          </div>
+
+          <div class="note-content-wrapper">
+            <div
+              id="translatedContent"
+              class="note-content"
+              contenteditable="true"
+              placeholder="Real-time translation will appear here..."
+            ></div>
+            <div
+              id="rawTranscription"
+              class="note-content active"
+              contenteditable="true"
+              placeholder="Live transcription will appear here..."
+            ></div>
+            
+            <div id="sourcePanel" class="note-content source-panel">
+              <div class="source-group">
+                <h3><i class="fas fa-bullseye"></i> Audio Source</h3>
+                <p class="source-desc">Select where the audio should be captured from.</p>
+                
+                <div class="input-grid">
+                  <div class="input-card selected" data-type="mic">
+                    <i class="fas fa-microphone-alt"></i>
+                    <span>Microphone</span>
+                    <small>Device Inputs</small>
+                  </div>
+                  <div class="input-card" data-type="system">
+                    <i class="fas fa-desktop"></i>
+                    <span>System / Tab</span>
+                    <small>YouTube, Zoom, Meet</small>
+                  </div>
+                </div>
+              </div>
+
+              <div class="source-group" id="deviceSelectionGroup">
+                <h3><i class="fas fa-sliders-h"></i> Input Device</h3>
+                <div class="select-wrapper">
+                  <select id="audioDeviceSelect">
+                    <option value="default">Default Microphone</option>
+                  </select>
+                  <i class="fas fa-chevron-down"></i>
+                </div>
+              </div>
+
+              <div class="source-group">
+                <h3><i class="fas fa-language"></i> Input Language</h3>
+                <p class="source-desc">The language being spoken (Source).</p>
+                <div class="select-wrapper">
+                  <select id="languageSelect">
+                    <option value="auto">Auto Detect</option>
+                    <option value="en-US">English (US)</option>
+                    <option value="en-GB">English (UK)</option>
+                    <option value="es-ES">Spanish</option>
+                    <option value="fr-FR">French</option>
+                    <option value="de-DE">German</option>
+                    <option value="it-IT">Italian</option>
+                    <option value="pt-BR">Portuguese (Brazil)</option>
+                    <option value="nl-NL">Dutch</option>
+                    <option value="ru-RU">Russian</option>
+                    <option value="ja-JP">Japanese</option>
+                    <option value="zh-CN">Chinese (Simplified)</option>
+                    <option value="ko-KR">Korean</option>
+                    <option value="hi-IN">Hindi</option>
+                    <option value="ar-SA">Arabic</option>
+                    <option value="tr-TR">Turkish</option>
+                    <option value="tl-PH">Filipino (Tagalog)</option>
+                    <option value="id-ID">Indonesian</option>
+                    <option value="vi-VN">Vietnamese</option>
+                    <option value="th-TH">Thai</option>
+                  </select>
+                  <i class="fas fa-chevron-down"></i>
+                </div>
+              </div>
+
+              <div class="source-group">
+                <h3><i class="fas fa-headphones-alt"></i> Translation Output</h3>
+                <p class="source-desc">Read aloud and display the translation in this language.</p>
+                <div class="select-wrapper">
+                  <select id="translationSelect">
+                    <option value="none">None (Transcription Only)</option>
+                    <option value="en-US">English (US)</option>
+                    <option value="en-GB">English (UK)</option>
+                    <option value="es-ES">Spanish</option>
+                    <option value="fr-FR">French</option>
+                    <option value="de-DE">German</option>
+                    <option value="it-IT">Italian</option>
+                    <option value="pt-BR">Portuguese (Brazil)</option>
+                    <option value="nl-NL">Dutch (Flemish)</option>
+                    <option value="ru-RU">Russian</option>
+                    <option value="ja-JP">Japanese</option>
+                    <option value="zh-CN">Chinese (Simplified)</option>
+                    <option value="ko-KR">Korean</option>
+                    <option value="hi-IN">Hindi</option>
+                    <option value="ar-SA">Arabic</option>
+                    <option value="tr-TR">Turkish</option>
+                    <option value="tl-PH">Filipino (Tagalog)</option>
+                    <option value="id-ID">Indonesian</option>
+                    <option value="vi-VN">Vietnamese</option>
+                    <option value="th-TH">Thai</option>
+                  </select>
+                  <i class="fas fa-chevron-down"></i>
+                </div>
+              </div>
+
+              <div class="source-info" id="systemAudioInfo" style="display: none;">
+                <p><i class="fas fa-info-circle"></i> <strong>System Audio / URL:</strong> To transcribe a Zoom meeting, YouTube video, or any URL, select this option. When recording starts, choose the specific <strong>Tab</strong> or <strong>Window</strong> and ensure <strong>"Share Audio"</strong> is checked.</p>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div class="recording-interface">
+          <div id="liveRecordingTitle" class="live-recording-title" style="display: none">
+            Recording
+          </div>
+          <canvas id="liveWaveformCanvas" style="display: none"></canvas>
+          <div id="liveRecordingTimerDisplay" class="live-recording-timer" style="display: none">
+            00:00.00
+          </div>
+
+          <div class="status-indicator">
+            <span id="recordingStatus" class="status-text">Ready to stream</span>
+          </div>
+
+          <div class="recording-controls">
+            <button class="action-button" id="themeToggleButton" title="Toggle Theme">
+              <i class="fas fa-sun"></i>
+            </button>
+
+            <button id="recordButton" class="record-button" title="Start/Stop Recording">
+              <div class="record-button-inner">
+                <i class="fas fa-microphone"></i>
+              </div>
+              <svg class="record-waves" viewBox="0 0 200 200">
+                <circle class="wave wave1" cx="100" cy="100" r="40" />
+                <circle class="wave wave2" cx="100" cy="100" r="70" />
+                <circle class="wave wave3" cx="100" cy="100" r="100" />
+              </svg>
+              <span class="record-text">Record</span>
+            </button>
+
+            <button class="action-button" id="newButton" title="New Note / Clear">
+              <i class="fas fa-file"></i>
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div id="micStatus" class="debug-panel"></div>
+
+    <script>
+      document.addEventListener("DOMContentLoaded", () => {
+        const tabNav = document.querySelector(".tab-navigation");
+        const tabButtons = tabNav.querySelectorAll(".tab-button");
+        const activeTabIndicator = tabNav.querySelector(".active-tab-indicator");
+        const noteContents = document.querySelectorAll(".note-content");
+
+        function setActiveTab(activeButton, skipAnimation = false) {
+          if (!activeButton || !activeTabIndicator) return;
+
+          tabButtons.forEach((btn) => btn.classList.remove("active"));
+          activeButton.classList.add("active");
+
+          const tabName = activeButton.getAttribute("data-tab");
+          noteContents.forEach((content) => content.classList.remove("active"));
+
+          if (tabName === "raw") {
+            document.getElementById("rawTranscription").classList.add("active");
+          } else if (tabName === "audio") {
+            document.getElementById("translatedContent").classList.add("active");
+          } else if (tabName === "source") {
+            document.getElementById("sourcePanel").classList.add("active");
+          }
+
+          const originalTransition = activeTabIndicator.style.transition;
+          if (skipAnimation) {
+            activeTabIndicator.style.transition = "none";
+          } else {
+            activeTabIndicator.style.transition = "";
+          }
+
+          activeTabIndicator.style.left = `${activeButton.offsetLeft}px`;
+          activeTabIndicator.style.width = `${activeButton.offsetWidth}px`;
+
+          if (skipAnimation) {
+            activeTabIndicator.offsetHeight;
+            activeTabIndicator.style.transition = originalTransition;
+          }
+        }
+
+        tabButtons.forEach((button) => {
+          button.addEventListener("click", (e) => {
+            setActiveTab(e.currentTarget);
+          });
+        });
+
+        const initiallyActiveButton = tabNav.querySelector(".tab-button.active");
+        if (initiallyActiveButton) {
+          requestAnimationFrame(() => {
+            setActiveTab(initiallyActiveButton, true);
+          });
+        }
+
+        window.addEventListener("resize", () => {
+          requestAnimationFrame(() => {
+            const currentActiveButton = tabNav.querySelector(".tab-button.active");
+            if (currentActiveButton) {
+              setActiveTab(currentActiveButton, true);
+            }
+          });
+        });
+      });
+    </script>
+  </body>
+</html>
