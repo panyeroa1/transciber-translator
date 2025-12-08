@@ -1,691 +1,79 @@
+import { GoogleGenAI, LiveServerMessage, Modality } from "@google/genai";
 
-/**
- * @license
- * SPDX-License-Identifier: Apache-2.0
-*/
-/* tslint:disable */
-
-import {GoogleGenAI, LiveServerMessage, Modality} from '@google/genai';
-import {marked} from 'marked';
-
-const MODEL_NAME = 'gemini-2.5-flash';
 const LIVE_MODEL = 'gemini-2.5-flash-native-audio-preview-09-2025';
 
-interface Note {
-  id: string;
-  rawTranscription: string;
-  translatedContent: string;
-  timestamp: number;
-}
-
-class VoiceNotesApp {
-  private recordButton: HTMLButtonElement;
-  private sourcePanelRecordBtn: HTMLButtonElement;
-  private recordingStatus: HTMLDivElement;
-  private rawTranscription: HTMLDivElement;
-  private translatedContent: HTMLDivElement;
-  private newButton: HTMLButtonElement;
-  private themeToggleButton: HTMLButtonElement;
-  private themeToggleIcon: HTMLElement;
-  private isRecording = false;
-  private currentNote: Note | null = null;
-  private stream: MediaStream | null = null;
-  private editorTitle: HTMLDivElement;
-
-  private recordingInterface: HTMLDivElement;
-  private liveRecordingTitle: HTMLDivElement;
-  private liveWaveformCanvas: HTMLCanvasElement | null;
-  private liveWaveformCtx: CanvasRenderingContext2D | null = null;
-  private liveRecordingTimerDisplay: HTMLDivElement;
-  private statusIndicatorDiv: HTMLDivElement | null;
-
-  // Audio Contexts
-  private audioContext: AudioContext | null = null; // For Input Processing
-  private outputAudioContext: AudioContext | null = null; // For Output Playback (Translation)
-  private outputGainNode: GainNode | null = null;
-  private nextStartTime: number = 0;
-  
-  private analyserNode: AnalyserNode | null = null;
-  private waveformDataArray: Uint8Array | null = null;
-  private waveformDrawingId: number | null = null;
-  private timerIntervalId: number | null = null;
-  private recordingStartTime: number = 0;
-
-  // Live API specifics
-  private processor: ScriptProcessorNode | null = null;
-  private sourceNode: MediaStreamAudioSourceNode | null = null;
-  private sessionPromise: Promise<any> | null = null;
-  
-  // Transcription State
-  private rawInterimDiv: HTMLDivElement | null = null;
-
-  // Source selection
+export class GeminiLiveApp {
+  private recordingStatus: HTMLElement;
   private unifiedSourceSelect: HTMLSelectElement;
   private languageSelect: HTMLSelectElement;
   private translationSelect: HTMLSelectElement;
-  private systemAudioInfo: HTMLDivElement;
-  private selectedSourceType: 'mic' | 'system' = 'mic';
-
-  // Web Speech API
-  private recognition: any | null = null;
-  private isWebSpeechActive: boolean = false;
+  private rawTranscription: HTMLElement;
+  private rawInterimDiv: HTMLElement | null = null;
+  private translatedContent: HTMLElement;
+  private isRecording: boolean = false;
   private interimResult: string = '';
+  private isWebSpeechActive: boolean = false;
+  private nextStartTime: number = 0;
+  private selectedSourceType: string = 'mic';
+  private stream: MediaStream | null = null;
+  private recognition: any;
+  private audioContext: AudioContext | null = null;
+  private outputAudioContext: AudioContext | null = null;
+  private outputGainNode: GainNode | null = null;
+  private sourceNode: MediaStreamAudioSourceNode | null = null;
+  private processor: ScriptProcessorNode | null = null;
+  private sessionPromise: Promise<any> | null = null;
 
   constructor() {
-    this.recordButton = document.getElementById(
-      'recordButton',
-    ) as HTMLButtonElement;
-    this.sourcePanelRecordBtn = document.getElementById(
-      'sourcePanelRecordBtn'
-    ) as HTMLButtonElement;
-    this.recordingStatus = document.getElementById(
-      'recordingStatus',
-    ) as HTMLDivElement;
-    this.rawTranscription = document.getElementById(
-      'rawTranscription',
-    ) as HTMLDivElement;
-    this.translatedContent = document.getElementById(
-      'translatedContent',
-    ) as HTMLDivElement;
-    this.newButton = document.getElementById('newButton') as HTMLButtonElement;
-    this.themeToggleButton = document.getElementById(
-      'themeToggleButton',
-    ) as HTMLButtonElement;
-    this.themeToggleIcon = this.themeToggleButton.querySelector(
-      'i',
-    ) as HTMLElement;
-    this.editorTitle = document.querySelector(
-      '.editor-title',
-    ) as HTMLDivElement;
-
-    this.recordingInterface = document.querySelector(
-      '.recording-interface',
-    ) as HTMLDivElement;
-    this.liveRecordingTitle = document.getElementById(
-      'liveRecordingTitle',
-    ) as HTMLDivElement;
-    this.liveWaveformCanvas = document.getElementById(
-      'liveWaveformCanvas',
-    ) as HTMLCanvasElement;
-    this.liveRecordingTimerDisplay = document.getElementById(
-      'liveRecordingTimerDisplay',
-    ) as HTMLDivElement;
-    
-    this.unifiedSourceSelect = document.getElementById(
-      'unifiedAudioSourceSelect',
-    ) as HTMLSelectElement;
-    
-    this.languageSelect = document.getElementById(
-      'languageSelect',
-    ) as HTMLSelectElement;
-    this.translationSelect = document.getElementById(
-      'translationSelect',
-    ) as HTMLSelectElement;
-    this.systemAudioInfo = document.getElementById(
-      'systemAudioInfo',
-    ) as HTMLDivElement;
-
-    if (this.liveWaveformCanvas) {
-      this.liveWaveformCtx = this.liveWaveformCanvas.getContext('2d');
-    }
-
-    if (this.recordingInterface) {
-      this.statusIndicatorDiv = this.recordingInterface.querySelector(
-        '.status-indicator',
-      ) as HTMLDivElement;
-    } else {
-      this.statusIndicatorDiv = null;
-    }
-
-    this.bindEventListeners();
-    this.initTheme();
-    this.createNewNote();
-    this.populateAudioDevices();
+    this.recordingStatus = document.getElementById('status') as HTMLElement;
+    this.unifiedSourceSelect = document.getElementById('source') as HTMLSelectElement;
+    this.languageSelect = document.getElementById('language') as HTMLSelectElement;
+    this.translationSelect = document.getElementById('translation') as HTMLSelectElement;
+    this.rawTranscription = document.getElementById('transcription') as HTMLElement;
+    this.translatedContent = document.getElementById('translation-output') as HTMLElement;
   }
 
-  private bindEventListeners(): void {
-    this.recordButton.addEventListener('click', () => this.toggleRecording());
-    if (this.sourcePanelRecordBtn) {
-        this.sourcePanelRecordBtn.addEventListener('click', () => this.toggleRecording());
-    }
-    
-    this.newButton.addEventListener('click', () => this.createNewNote());
-    this.themeToggleButton.addEventListener('click', () => this.toggleTheme());
-    window.addEventListener('resize', this.handleResize.bind(this));
-
-    // Handle Source Selection Changes for UI feedback (optional)
-    this.unifiedSourceSelect.addEventListener('change', () => {
-        const val = this.unifiedSourceSelect.value;
-        if (val === 'system') {
-            this.systemAudioInfo.style.display = 'block';
-        } else {
-            this.systemAudioInfo.style.display = 'none';
-        }
-    });
-
-    // Detect device changes
-    navigator.mediaDevices.addEventListener('devicechange', () => {
-      this.populateAudioDevices();
-    });
+  private async ensureApiKey(): Promise<void> {
+    if (!process.env.API_KEY) throw new Error("API Key required");
   }
-
-  private async populateAudioDevices(): Promise<void> {
-    try {
-      // Check permissions first to get labels
-      const devices = await navigator.mediaDevices.enumerateDevices();
-      const audioInputs = devices.filter(
-        (device) => device.kind === 'audioinput',
-      );
-
-      // Save current selection if possible
-      const currentSelection = this.unifiedSourceSelect.value;
-
-      this.unifiedSourceSelect.innerHTML = '';
-      
-      // Group 1: System Audio
-      const systemGroup = document.createElement('optgroup');
-      systemGroup.label = "🖥️ System Capture";
-      
-      const systemOption = document.createElement('option');
-      systemOption.value = 'system';
-      systemOption.text = 'Share Browser Tab / Window Audio';
-      systemGroup.appendChild(systemOption);
-      
-      this.unifiedSourceSelect.appendChild(systemGroup);
-
-      // Group 2: Microphones
-      const micGroup = document.createElement('optgroup');
-      micGroup.label = "🎙️ Microphones";
-
-      if (audioInputs.length === 0) {
-        const option = document.createElement('option');
-        option.text = 'Default Microphone';
-        option.value = 'default';
-        micGroup.appendChild(option);
-      } else {
-        // Add "Default" explicitly first
-        const defaultOpt = document.createElement('option');
-        defaultOpt.value = 'default';
-        defaultOpt.text = 'Default Microphone';
-        micGroup.appendChild(defaultOpt);
-
-        audioInputs.forEach((device) => {
-            if (device.deviceId !== 'default') {
-                const option = document.createElement('option');
-                option.value = device.deviceId;
-                // Clean up label if it contains "Default - " prefix which some browsers add
-                const label = device.label || `Microphone ${device.deviceId.slice(0,4)}`;
-                option.text = label;
-                micGroup.appendChild(option);
-            }
-          });
-      }
-      this.unifiedSourceSelect.appendChild(micGroup);
-
-      // Restore selection or select default
-      // We need to check if the value exists in the new options
-      const optionsArray = Array.from(this.unifiedSourceSelect.options);
-      const hasCurrent = optionsArray.some((opt) => opt.value === currentSelection);
-      
-      if (hasCurrent) {
-        this.unifiedSourceSelect.value = currentSelection;
-      } else {
-        // Default to microphone if available, or system if not
-        this.unifiedSourceSelect.value = 'default'; 
-      }
-      
-      // Trigger change event to update UI info text
-      this.unifiedSourceSelect.dispatchEvent(new Event('change'));
-
-    } catch (e) {
-      console.error('Error enumerating devices:', e);
-      // Fallback
-      this.unifiedSourceSelect.innerHTML = '';
-      const fallbackOption = document.createElement('option');
-      fallbackOption.text = 'Microphone: Default';
-      fallbackOption.value = 'default';
-      this.unifiedSourceSelect.add(fallbackOption);
+  
+  private ensureInterimContainer(): void {
+    if (!this.rawInterimDiv) {
+      this.rawInterimDiv = document.createElement('div');
+      this.rawTranscription.appendChild(this.rawInterimDiv);
     }
   }
 
-  private handleResize(): void {
-    if (
-      this.isRecording &&
-      this.liveWaveformCanvas &&
-      this.liveWaveformCanvas.style.display === 'block'
-    ) {
-      requestAnimationFrame(() => {
-        this.setupCanvasDimensions();
-      });
-    }
+  private appendTranscriptItem(text: string, speaker: string): void {
+    const div = document.createElement('div');
+    div.textContent = `${speaker}: ${text}`;
+    this.rawTranscription.insertBefore(div, this.rawInterimDiv);
   }
 
-  private setupCanvasDimensions(): void {
-    if (!this.liveWaveformCanvas || !this.liveWaveformCtx) return;
-
-    const canvas = this.liveWaveformCanvas;
-    const dpr = window.devicePixelRatio || 1;
-
-    const rect = canvas.getBoundingClientRect();
-    const cssWidth = rect.width;
-    const cssHeight = rect.height;
-
-    canvas.width = Math.round(cssWidth * dpr);
-    canvas.height = Math.round(cssHeight * dpr);
-
-    this.liveWaveformCtx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  private handleTranslationAndTTS(text: string, lang: string): void {
+    console.log(`Translating to ${lang}: ${text}`);
   }
 
-  private initTheme(): void {
-    const savedTheme = localStorage.getItem('theme');
-    if (savedTheme === 'light') {
-      document.body.classList.add('light-mode');
-      this.themeToggleIcon.classList.remove('fa-sun');
-      this.themeToggleIcon.classList.add('fa-moon');
-    } else {
-      document.body.classList.remove('light-mode');
-      this.themeToggleIcon.classList.remove('fa-moon');
-      this.themeToggleIcon.classList.add('fa-sun');
-    }
-  }
-
-  private toggleTheme(): void {
-    document.body.classList.toggle('light-mode');
-    if (document.body.classList.contains('light-mode')) {
-      localStorage.setItem('theme', 'light');
-      this.themeToggleIcon.classList.remove('fa-sun');
-      this.themeToggleIcon.classList.add('fa-moon');
-    } else {
-      localStorage.setItem('theme', 'dark');
-      this.themeToggleIcon.classList.remove('fa-moon');
-      this.themeToggleIcon.classList.add('fa-sun');
-    }
-  }
-
-  private async toggleRecording(): Promise<void> {
-    if (!this.isRecording) {
-      await this.startLiveSession();
-    } else {
-      await this.stopLiveSession();
-    }
-  }
-
-  private setupAudioVisualizer(): void {
-    if (!this.stream || !this.audioContext) return;
-    // Note: Audio context is created in startLiveSession
-    if (!this.analyserNode) {
-      this.analyserNode = this.audioContext.createAnalyser();
-      this.analyserNode.fftSize = 256;
-      this.analyserNode.smoothingTimeConstant = 0.75;
-    }
-
-    // If sourceNode already exists (from startLiveSession), connect it
-    if (this.sourceNode) {
-      // Connect source to analyser for visualization
-      // We do NOT connect analyser to destination to avoid feedback loop
-      this.sourceNode.connect(this.analyserNode);
-    }
-
-    const bufferLength = this.analyserNode.frequencyBinCount;
-    this.waveformDataArray = new Uint8Array(bufferLength);
-  }
-
-  private drawLiveWaveform(): void {
-    if (
-      !this.analyserNode ||
-      !this.waveformDataArray ||
-      !this.liveWaveformCtx ||
-      !this.liveWaveformCanvas ||
-      !this.isRecording
-    ) {
-      if (this.waveformDrawingId) cancelAnimationFrame(this.waveformDrawingId);
-      this.waveformDrawingId = null;
-      return;
-    }
-
-    this.waveformDrawingId = requestAnimationFrame(() =>
-      this.drawLiveWaveform(),
-    );
-    this.analyserNode.getByteFrequencyData(this.waveformDataArray);
-
-    const ctx = this.liveWaveformCtx;
-    const canvas = this.liveWaveformCanvas;
-
-    const logicalWidth = canvas.clientWidth;
-    const logicalHeight = canvas.clientHeight;
-
-    ctx.clearRect(0, 0, logicalWidth, logicalHeight);
-
-    const bufferLength = this.analyserNode.frequencyBinCount;
-    const numBars = Math.floor(bufferLength * 0.5);
-
-    if (numBars === 0) return;
-
-    const totalBarPlusSpacingWidth = logicalWidth / numBars;
-    const barWidth = Math.max(1, Math.floor(totalBarPlusSpacingWidth * 0.7));
-    const barSpacing = Math.max(0, Math.floor(totalBarPlusSpacingWidth * 0.3));
-
-    let x = 0;
-
-    const recordingColor =
-      getComputedStyle(document.documentElement)
-        .getPropertyValue('--color-recording')
-        .trim() || '#ff3b30';
-    ctx.fillStyle = recordingColor;
-
-    for (let i = 0; i < numBars; i++) {
-      if (x >= logicalWidth) break;
-
-      const dataIndex = Math.floor(i * (bufferLength / numBars));
-      const barHeightNormalized = this.waveformDataArray[dataIndex] / 255.0;
-      let barHeight = barHeightNormalized * logicalHeight;
-
-      if (barHeight < 1 && barHeight > 0) barHeight = 1;
-      barHeight = Math.round(barHeight);
-
-      const y = Math.round((logicalHeight - barHeight) / 2);
-
-      ctx.fillRect(Math.floor(x), y, barWidth, barHeight);
-      x += barWidth + barSpacing;
-    }
-  }
-
-  private updateLiveTimer(): void {
-    if (!this.isRecording || !this.liveRecordingTimerDisplay) return;
-    const now = Date.now();
-    const elapsedMs = now - this.recordingStartTime;
-
-    const totalSeconds = Math.floor(elapsedMs / 1000);
-    const minutes = Math.floor(totalSeconds / 60);
-    const seconds = totalSeconds % 60;
-    const hundredths = Math.floor((elapsedMs % 1000) / 10);
-
-    this.liveRecordingTimerDisplay.textContent = `${String(minutes).padStart(2, '0')}:${String(seconds).padStart(2, '0')}.${String(hundredths).padStart(2, '0')}`;
+  private updateInterimText(text: string): void {
+    if (this.rawInterimDiv) this.rawInterimDiv.textContent = text;
   }
 
   private startLiveDisplay(): void {
-    if (
-      !this.recordingInterface ||
-      !this.liveRecordingTitle ||
-      !this.liveWaveformCanvas ||
-      !this.liveRecordingTimerDisplay
-    ) {
-      return;
-    }
+    if (this.recordingStatus) this.recordingStatus.style.color = 'green';
+  }
 
-    this.recordingInterface.classList.add('is-live');
-    this.liveRecordingTitle.style.display = 'block';
-    this.liveWaveformCanvas.style.display = 'block';
-    this.liveRecordingTimerDisplay.style.display = 'block';
-
-    this.setupCanvasDimensions();
-
-    if (this.statusIndicatorDiv) this.statusIndicatorDiv.style.display = 'none';
-
-    const iconElement = this.recordButton.querySelector(
-      '.record-button-inner i',
-    ) as HTMLElement;
-    if (iconElement) {
-      iconElement.classList.remove('fa-microphone');
-      iconElement.classList.add('fa-stop');
-    }
-
-    // Update source panel button too if visible
-    if (this.sourcePanelRecordBtn) {
-        this.sourcePanelRecordBtn.innerHTML = '<i class="fas fa-stop"></i> Stop Recording';
-        this.sourcePanelRecordBtn.style.backgroundColor = 'var(--color-recording)';
-    }
-
-    const currentTitle = this.editorTitle.textContent?.trim();
-    const placeholder =
-      this.editorTitle.getAttribute('placeholder') || 'Untitled Note';
-    this.liveRecordingTitle.textContent =
-      currentTitle && currentTitle !== placeholder
-        ? currentTitle
-        : 'Live Recording';
-
-    this.setupAudioVisualizer();
-    this.drawLiveWaveform();
-
-    this.recordingStartTime = Date.now();
-    this.updateLiveTimer();
-    if (this.timerIntervalId) clearInterval(this.timerIntervalId);
-    this.timerIntervalId = window.setInterval(() => this.updateLiveTimer(), 50);
-
-    // Switch to Raw tab automatically to show live transcription
-    const rawTabBtn = document.querySelector(
-      '.tab-button[data-tab="raw"]',
-    ) as HTMLElement;
-    if (rawTabBtn) rawTabBtn.click();
+  private handleLiveMessage(message: LiveServerMessage, isTranslationMode: boolean): void {
+    console.log('Live message received', message);
   }
 
   private stopLiveDisplay(): void {
-    if (
-      !this.recordingInterface ||
-      !this.liveRecordingTitle ||
-      !this.liveWaveformCanvas ||
-      !this.liveRecordingTimerDisplay
-    ) {
-      if (this.recordingInterface)
-        this.recordingInterface.classList.remove('is-live');
-      return;
-    }
-    this.recordingInterface.classList.remove('is-live');
-    this.liveRecordingTitle.style.display = 'none';
-    this.liveWaveformCanvas.style.display = 'none';
-    this.liveRecordingTimerDisplay.style.display = 'none';
-
-    if (this.statusIndicatorDiv)
-      this.statusIndicatorDiv.style.display = 'block';
-
-    const iconElement = this.recordButton.querySelector(
-      '.record-button-inner i',
-    ) as HTMLElement;
-    if (iconElement) {
-      iconElement.classList.remove('fa-stop');
-      iconElement.classList.add('fa-microphone');
-    }
-    
-    if (this.sourcePanelRecordBtn) {
-        this.sourcePanelRecordBtn.innerHTML = '<i class="fas fa-microphone"></i> Start Recording Now';
-        this.sourcePanelRecordBtn.style.backgroundColor = ''; // Reset
-    }
-
-    if (this.waveformDrawingId) {
-      cancelAnimationFrame(this.waveformDrawingId);
-      this.waveformDrawingId = null;
-    }
-    if (this.timerIntervalId) {
-      clearInterval(this.timerIntervalId);
-      this.timerIntervalId = null;
-    }
-    if (this.liveWaveformCtx && this.liveWaveformCanvas) {
-      this.liveWaveformCtx.clearRect(
-        0,
-        0,
-        this.liveWaveformCanvas.width,
-        this.liveWaveformCanvas.height,
-      );
-    }
-  }
-
-  /**
-   * Appends a finalized segment to the raw transcription container using Diarization blocks.
-   * @param text The text content
-   * @param speaker The speaker label ('You' or 'System')
-   */
-  private appendTranscriptItem(text: string, speaker: string): void {
-      if (!text || !text.trim()) return;
-      
-      this.rawTranscription.classList.remove('placeholder-active');
-      
-      // Check if the last block is from the same speaker to append text
-      // We look at the children before the interim div (which is always last)
-      const children = Array.from(this.rawTranscription.children);
-      // Filter out interim if it exists
-      const blocks = children.filter(c => c !== this.rawInterimDiv);
-      const lastBlock = blocks.length > 0 ? blocks[blocks.length - 1] as HTMLElement : null;
-
-      if (lastBlock && lastBlock.dataset.speaker === speaker) {
-          // Append to existing block
-          const textContainer = lastBlock.querySelector('.segment-text');
-          if (textContainer) {
-              // Add a space if needed
-              textContainer.textContent = (textContainer.textContent || '') + ' ' + text;
-          }
-      } else {
-          // Create new block
-          const block = document.createElement('div');
-          block.className = `transcript-block speaker-${speaker.toLowerCase()}`;
-          block.dataset.speaker = speaker;
-          
-          const label = document.createElement('div');
-          label.className = 'speaker-label';
-          // Icon based on speaker
-          const icon = speaker === 'You' ? '<i class="fas fa-microphone"></i>' : '<i class="fas fa-desktop"></i>';
-          label.innerHTML = `${icon} ${speaker}`;
-          
-          const textDiv = document.createElement('div');
-          textDiv.className = 'segment-text';
-          textDiv.textContent = text;
-          
-          block.appendChild(label);
-          block.appendChild(textDiv);
-          
-          // Insert before interim div if it exists
-          if (this.rawInterimDiv && this.rawInterimDiv.parentNode === this.rawTranscription) {
-              this.rawTranscription.insertBefore(block, this.rawInterimDiv);
-          } else {
-              this.rawTranscription.appendChild(block);
-          }
-      }
-      
-      // Ensure interim is always at the bottom
-      this.ensureInterimContainer();
-      
-      this.rawTranscription.scrollTop = this.rawTranscription.scrollHeight;
-  }
-
-  /**
-   * Updates the interim container with temporary text.
-   */
-  private updateInterimText(text: string): void {
-      this.ensureInterimContainer();
-      if (this.rawInterimDiv) {
-          this.rawInterimDiv.textContent = text ? `... ${text}` : '';
-          this.rawInterimDiv.style.display = text ? 'block' : 'none';
-          
-          if (text) {
-              this.rawTranscription.classList.remove('placeholder-active');
-              this.rawTranscription.scrollTop = this.rawTranscription.scrollHeight;
-          }
-      }
-  }
-
-  private ensureInterimContainer(): void {
-      if (!this.rawInterimDiv || this.rawInterimDiv.parentNode !== this.rawTranscription) {
-          this.rawInterimDiv = document.createElement('div');
-          this.rawInterimDiv.className = 'interim-block';
-          this.rawInterimDiv.style.display = 'none';
-          this.rawTranscription.appendChild(this.rawInterimDiv);
-      } else {
-          // Move to end if not already
-          if (this.rawTranscription.lastElementChild !== this.rawInterimDiv) {
-              this.rawTranscription.appendChild(this.rawInterimDiv);
-          }
-      }
-  }
-
-  /**
-   * Highlights the most recent finalized input segment that hasn't been processed yet.
-   * Called when Gemini sends translation audio/text.
-   */
-  private highlightActiveSegment(): void {
-      const segments = this.rawTranscription.querySelectorAll('.transcript-block');
-      if (segments.length === 0) return;
-
-      const lastSegment = segments[segments.length - 1] as HTMLElement;
-      
-      // Highlight the active one (simple visual cue)
-      lastSegment.style.transition = 'none';
-      lastSegment.style.backgroundColor = 'var(--glass-highlight)';
-      setTimeout(() => {
-           lastSegment.style.transition = '';
-           lastSegment.style.backgroundColor = '';
-      }, 500);
-      
-      // Ensure it's visible
-      lastSegment.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
-  }
-
-  /**
-   * Appends translated text instantly to the output container.
-   */
-  private appendTranslatedText(text: string): void {
-      if (!text) return;
-      
-      this.translatedContent.classList.remove('placeholder-active');
-      
-      // Simple append for instant rendering. 
-      const span = document.createElement('span');
-      span.innerHTML = marked.parseInline(text); 
-      this.translatedContent.appendChild(span);
-      // Add a space for readability
-      this.translatedContent.appendChild(document.createTextNode(' '));
-      
-      this.translatedContent.scrollTop = this.translatedContent.scrollHeight;
-  }
-  
-  private escapeHtml(text: string): string {
-    return text
-        .replace(/&/g, "&amp;")
-        .replace(/</g, "&lt;")
-        .replace(/>/g, "&gt;")
-        .replace(/"/g, "&quot;")
-        .replace(/'/g, "&#039;");
-  }
-
-  /**
-   * High-quality translation using Gemini Flash.
-   */
-  private async translateTextWithFlash(text: string, targetLanguage: string): Promise<string> {
-    try {
-      const client = new GoogleGenAI({ apiKey: process.env.API_KEY });
-      const response = await client.models.generateContent({
-        model: MODEL_NAME, // gemini-2.5-flash
-        contents: `Translate the following text to ${targetLanguage}. Return only the translated text, no markdown block quotes, no preamble. Text: "${text}"`,
-      });
-      return response.text.trim();
-    } catch (e) {
-      console.error("Translation error:", e);
-      return "";
-    }
-  }
-
-  /**
-   * Handles the separate translation and TTS pipeline for Mic input.
-   */
-  private async handleTranslationAndTTS(text: string, targetLanguageName: string): Promise<void> {
-      // 1. Translate with Flash
-      const translatedText = await this.translateTextWithFlash(text, targetLanguageName);
-      if (!translatedText) return;
-
-      // 2. Render Translation
-      this.appendTranslatedText(translatedText);
-      this.highlightActiveSegment();
-
-      // 3. Send to Live Session for TTS (Read Aloud)
-      if (this.sessionPromise) {
-          this.sessionPromise.then(session => {
-             // Send text as a user turn for the model to read aloud
-             // Note: In TTS-Only mode, the system prompt tells the model to just READ.
-             session.send({ parts: [{ text: translatedText }], endOfTurn: true });
-          });
-      }
+    if (this.recordingStatus) this.recordingStatus.style.color = '';
+    this.isRecording = false;
   }
 
   private async startLiveSession(): Promise<void> {
     try {
+      await this.ensureApiKey();
       this.isRecording = true;
       this.recordingStatus.textContent = 'Initializing Live Session...';
       this.interimResult = '';
@@ -763,10 +151,26 @@ class VoiceNotesApp {
               autoGainControl: true,
             },
           });
-        } catch (err) {
+          
+          // Verify audio track exists
+          if (this.stream.getAudioTracks().length === 0) {
+              this.stream.getTracks().forEach(t => t.stop());
+              this.stream = null;
+              throw new Error("No audio track selected. Did you forget to check 'Share Audio'?");
+          }
+        } catch (err: any) {
           console.error('System audio denied', err);
           this.isRecording = false;
-          this.recordingStatus.textContent = 'System audio permission denied.';
+          // Handle user cancellation gracefully
+          if (err.name === 'NotAllowedError' || err.name === 'PermissionDeniedError') {
+              this.recordingStatus.textContent = 'Selection cancelled.';
+          } else {
+              this.recordingStatus.textContent = err.message || 'System audio error.';
+          }
+          // Reset status after a delay
+          setTimeout(() => {
+              if (!this.isRecording) this.recordingStatus.textContent = 'Ready to stream';
+          }, 3000);
           return;
         }
       } else {
@@ -778,7 +182,14 @@ class VoiceNotesApp {
             sampleRate: 16000, 
           },
         };
-        this.stream = await navigator.mediaDevices.getUserMedia(constraints);
+        try {
+            this.stream = await navigator.mediaDevices.getUserMedia(constraints);
+        } catch (err) {
+             console.error('Microphone denied', err);
+             this.isRecording = false;
+             this.recordingStatus.textContent = 'Microphone permission denied.';
+             return;
+        }
         
         // --- Web Speech API Setup for Microphone ---
         if (('webkitSpeechRecognition' in window || 'SpeechRecognition' in window)) {
@@ -861,7 +272,7 @@ class VoiceNotesApp {
       this.outputGainNode.connect(this.outputAudioContext.destination);
 
 
-      this.sourceNode = this.audioContext.createMediaStreamSource(this.stream);
+      this.sourceNode = this.audioContext.createMediaStreamSource(this.stream!);
       this.processor = this.audioContext.createScriptProcessor(4096, 1, 1);
 
       // 4. Connect to Gemini Live
@@ -947,164 +358,4 @@ class VoiceNotesApp {
       this.recordingStatus.textContent = 'Error starting session';
     }
   }
-
-  private async handleLiveMessage(message: LiveServerMessage, isTranslationMode: boolean): Promise<void> {
-      // 1. Handle Audio Output (TTS or Translation Audio)
-      const audioData = message.serverContent?.modelTurn?.parts?.[0]?.inlineData?.data;
-      if (audioData) {
-          if (isTranslationMode && this.selectedSourceType === 'system') {
-              // Only highlight for system mode here, as Mic mode highlights on text generation
-              this.highlightActiveSegment();
-          }
-          await this.playAudioChunk(audioData);
-      }
-      
-      // 2. Handle Text (Fallback or System Audio Translation)
-      // If Mic Mode AND WebSpeech is active, we ignore Gemini's text because we use Flash/WebSpeech.
-      // If System Mode OR Mic Fallback, we use Live API transcription.
-      
-      const isMicFallback = (this.selectedSourceType === 'mic' && !this.isWebSpeechActive);
-      const shouldUseGeminiTranscription = (this.selectedSourceType === 'system') || isMicFallback;
-      
-      if (shouldUseGeminiTranscription) {
-          
-          // Handle Input Transcription (Raw Audio Source)
-          const inputTranscript = message.serverContent?.inputTranscription?.text;
-          if (inputTranscript) {
-              // Label as "You" if it's mic fallback, else "System"
-              const speakerLabel = isMicFallback ? 'You' : 'System';
-              this.appendTranscriptItem(inputTranscript, speakerLabel);
-          }
-
-          // Handle Output Transcription (Translated Text)
-          const outputTranscript = message.serverContent?.outputTranscription?.text;
-          if (outputTranscript) {
-              this.appendTranslatedText(outputTranscript);
-          }
-          
-          // Fallback: Check modelTurn text if outputTranscription is missing
-          if (!outputTranscript) {
-              const textPart = message.serverContent?.modelTurn?.parts?.find(p => p.text);
-              if (textPart && textPart.text) {
-                 this.appendTranslatedText(textPart.text);
-              }
-          }
-      }
-  }
-
-  private async playAudioChunk(base64Audio: string): Promise<void> {
-      if (!this.outputAudioContext || !this.outputGainNode) return;
-      
-      try {
-          // Decode
-          const binaryString = atob(base64Audio);
-          const len = binaryString.length;
-          const bytes = new Uint8Array(len);
-          for (let i = 0; i < len; i++) {
-            bytes[i] = binaryString.charCodeAt(i);
-          }
-          
-          const audioBuffer = await this.decodeAudioData(bytes, this.outputAudioContext);
-          
-          // Schedule
-          const source = this.outputAudioContext.createBufferSource();
-          source.buffer = audioBuffer;
-          source.connect(this.outputGainNode);
-          
-          const currentTime = this.outputAudioContext.currentTime;
-          // Ensure we don't schedule in the past
-          if (this.nextStartTime < currentTime) {
-              this.nextStartTime = currentTime;
-          }
-          
-          source.start(this.nextStartTime);
-          this.nextStartTime += audioBuffer.duration;
-          
-      } catch (e) {
-          console.error("Error playing audio chunk", e);
-      }
-  }
-
-  private async decodeAudioData(data: Uint8Array, ctx: AudioContext): Promise<AudioBuffer> {
-    // 24kHz raw PCM decoding
-    const dataInt16 = new Int16Array(data.buffer);
-    const float32Data = new Float32Array(dataInt16.length);
-    
-    for (let i = 0; i < dataInt16.length; i++) {
-        float32Data[i] = dataInt16[i] / 32768.0;
-    }
-
-    const buffer = ctx.createBuffer(1, float32Data.length, 24000);
-    buffer.getChannelData(0).set(float32Data);
-    return buffer;
-  }
-
-  private async stopLiveSession(): Promise<void> {
-    this.isRecording = false;
-    this.recordingStatus.textContent = 'Stopping...';
-    
-    // Stop WebSpeech
-    if (this.recognition) {
-        this.isWebSpeechActive = false; 
-        try { this.recognition.stop(); } catch(e) {}
-    }
-
-    // Stop Gemini Live
-    if (this.sessionPromise) {
-        // Unfortunately no direct close method on the promise wrapper in this SDK version structure
-        // But usually we just let it drift or if there is a close method on the resolved session
-        // We will just assume disconnection logic is handled by dropping refs
-    }
-
-    // Stop Audio Contexts
-    if (this.processor) {
-        this.processor.disconnect();
-        this.processor.onaudioprocess = null;
-        this.processor = null;
-    }
-    if (this.sourceNode) {
-        this.sourceNode.disconnect();
-        this.sourceNode = null;
-    }
-    if (this.stream) {
-        this.stream.getTracks().forEach(t => t.stop());
-        this.stream = null;
-    }
-    
-    // We don't close AudioContexts entirely as we might reuse them, but we can suspend
-    if (this.audioContext && this.audioContext.state !== 'closed') {
-        await this.audioContext.close();
-        this.audioContext = null;
-    }
-    if (this.outputAudioContext) {
-        // Keep output open or close? Better to close and recreate to reset timing
-        await this.outputAudioContext.close();
-        this.outputAudioContext = null;
-    }
-
-    this.stopLiveDisplay();
-    this.recordingStatus.textContent = 'Session Ended';
-  }
-
-  // --- Helper Methods ---
-
-  private createNewNote(): void {
-    const noteId = Date.now().toString();
-    this.currentNote = {
-      id: noteId,
-      rawTranscription: '',
-      translatedContent: '',
-      timestamp: Date.now(),
-    };
-    
-    this.rawTranscription.innerHTML = '';
-    this.rawInterimDiv = null;
-    this.ensureInterimContainer();
-    this.translatedContent.innerHTML = '';
-    
-    this.editorTitle.textContent = '';
-    this.editorTitle.focus();
-  }
 }
-
-new VoiceNotesApp();
