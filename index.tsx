@@ -21,6 +21,7 @@ interface Note {
 class VoiceNotesApp {
   private genAI: any;
   private recordButton: HTMLButtonElement;
+  private sourcePanelRecordBtn: HTMLButtonElement;
   private recordingStatus: HTMLDivElement;
   private rawTranscription: HTMLDivElement;
   private translatedContent: HTMLDivElement;
@@ -57,11 +58,10 @@ class VoiceNotesApp {
   private sessionPromise: Promise<any> | null = null;
   
   // Transcription State
-  private rawInterimSpan: HTMLSpanElement | null = null;
+  private rawInterimDiv: HTMLDivElement | null = null;
 
   // Source selection
-  private sourceCards: NodeListOf<HTMLDivElement>;
-  private deviceSelect: HTMLSelectElement;
+  private unifiedSourceSelect: HTMLSelectElement;
   private languageSelect: HTMLSelectElement;
   private translationSelect: HTMLSelectElement;
   private systemAudioInfo: HTMLDivElement;
@@ -79,6 +79,9 @@ class VoiceNotesApp {
 
     this.recordButton = document.getElementById(
       'recordButton',
+    ) as HTMLButtonElement;
+    this.sourcePanelRecordBtn = document.getElementById(
+      'sourcePanelRecordBtn'
     ) as HTMLButtonElement;
     this.recordingStatus = document.getElementById(
       'recordingStatus',
@@ -112,12 +115,11 @@ class VoiceNotesApp {
     this.liveRecordingTimerDisplay = document.getElementById(
       'liveRecordingTimerDisplay',
     ) as HTMLDivElement;
-    this.sourceCards = document.querySelectorAll(
-      '.input-card',
-    ) as NodeListOf<HTMLDivElement>;
-    this.deviceSelect = document.getElementById(
-      'audioDeviceSelect',
+    
+    this.unifiedSourceSelect = document.getElementById(
+      'unifiedAudioSourceSelect',
     ) as HTMLSelectElement;
+    
     this.languageSelect = document.getElementById(
       'languageSelect',
     ) as HTMLSelectElement;
@@ -148,30 +150,22 @@ class VoiceNotesApp {
 
   private bindEventListeners(): void {
     this.recordButton.addEventListener('click', () => this.toggleRecording());
+    if (this.sourcePanelRecordBtn) {
+        this.sourcePanelRecordBtn.addEventListener('click', () => this.toggleRecording());
+    }
+    
     this.newButton.addEventListener('click', () => this.createNewNote());
     this.themeToggleButton.addEventListener('click', () => this.toggleTheme());
     window.addEventListener('resize', this.handleResize.bind(this));
 
-    // Source Selection Logic
-    this.sourceCards.forEach((card) => {
-      card.addEventListener('click', () => {
-        this.sourceCards.forEach((c) => c.classList.remove('selected'));
-        card.classList.add('selected');
-        this.selectedSourceType = card.dataset.type as 'mic' | 'system';
-
-        const deviceGroup = document.getElementById('deviceSelectionGroup');
-        if (deviceGroup) {
-          if (this.selectedSourceType === 'system') {
-            deviceGroup.style.opacity = '0.5';
-            deviceGroup.style.pointerEvents = 'none';
-            if (this.systemAudioInfo) this.systemAudioInfo.style.display = 'block';
-          } else {
-            deviceGroup.style.opacity = '1';
-            deviceGroup.style.pointerEvents = 'auto';
-            if (this.systemAudioInfo) this.systemAudioInfo.style.display = 'none';
-          }
+    // Handle Source Selection Changes for UI feedback (optional)
+    this.unifiedSourceSelect.addEventListener('change', () => {
+        const val = this.unifiedSourceSelect.value;
+        if (val === 'system') {
+            this.systemAudioInfo.style.display = 'block';
+        } else {
+            this.systemAudioInfo.style.display = 'none';
         }
-      });
     });
 
     // Detect device changes
@@ -189,41 +183,73 @@ class VoiceNotesApp {
       );
 
       // Save current selection if possible
-      const currentSelection = this.deviceSelect.value;
+      const currentSelection = this.unifiedSourceSelect.value;
 
-      this.deviceSelect.innerHTML = '';
+      this.unifiedSourceSelect.innerHTML = '';
+      
+      // Group 1: System Audio
+      const systemGroup = document.createElement('optgroup');
+      systemGroup.label = "🖥️ System Capture";
+      
+      const systemOption = document.createElement('option');
+      systemOption.value = 'system';
+      systemOption.text = 'Share Browser Tab / Window Audio';
+      systemGroup.appendChild(systemOption);
+      
+      this.unifiedSourceSelect.appendChild(systemGroup);
+
+      // Group 2: Microphones
+      const micGroup = document.createElement('optgroup');
+      micGroup.label = "🎙️ Microphones";
 
       if (audioInputs.length === 0) {
         const option = document.createElement('option');
         option.text = 'Default Microphone';
         option.value = 'default';
-        this.deviceSelect.add(option);
+        micGroup.appendChild(option);
       } else {
+        // Add "Default" explicitly first
+        const defaultOpt = document.createElement('option');
+        defaultOpt.value = 'default';
+        defaultOpt.text = 'Default Microphone';
+        micGroup.appendChild(defaultOpt);
+
         audioInputs.forEach((device) => {
-            const option = document.createElement('option');
-            option.value = device.deviceId;
-            option.text =
-              device.label || `Microphone ${this.deviceSelect.length + 1}`;
-            this.deviceSelect.add(option);
+            if (device.deviceId !== 'default') {
+                const option = document.createElement('option');
+                option.value = device.deviceId;
+                // Clean up label if it contains "Default - " prefix which some browsers add
+                const label = device.label || `Microphone ${device.deviceId.slice(0,4)}`;
+                option.text = label;
+                micGroup.appendChild(option);
+            }
           });
       }
+      this.unifiedSourceSelect.appendChild(micGroup);
 
       // Restore selection or select default
-      const hasCurrent = Array.from(this.deviceSelect.options).some(
-        (opt) => opt.value === currentSelection,
-      );
+      // We need to check if the value exists in the new options
+      const optionsArray = Array.from(this.unifiedSourceSelect.options);
+      const hasCurrent = optionsArray.some((opt) => opt.value === currentSelection);
+      
       if (hasCurrent) {
-        this.deviceSelect.value = currentSelection;
+        this.unifiedSourceSelect.value = currentSelection;
+      } else {
+        // Default to microphone if available, or system if not
+        this.unifiedSourceSelect.value = 'default'; 
       }
+      
+      // Trigger change event to update UI info text
+      this.unifiedSourceSelect.dispatchEvent(new Event('change'));
+
     } catch (e) {
       console.error('Error enumerating devices:', e);
       // Fallback
-      if (this.deviceSelect.options.length === 0) {
-         const option = document.createElement('option');
-         option.text = 'Default Microphone';
-         option.value = 'default';
-         this.deviceSelect.add(option);
-      }
+      this.unifiedSourceSelect.innerHTML = '';
+      const fallbackOption = document.createElement('option');
+      fallbackOption.text = 'Microphone: Default';
+      fallbackOption.value = 'default';
+      this.unifiedSourceSelect.add(fallbackOption);
     }
   }
 
@@ -409,6 +435,12 @@ class VoiceNotesApp {
       iconElement.classList.add('fa-stop');
     }
 
+    // Update source panel button too if visible
+    if (this.sourcePanelRecordBtn) {
+        this.sourcePanelRecordBtn.innerHTML = '<i class="fas fa-stop"></i> Stop Recording';
+        this.sourcePanelRecordBtn.style.backgroundColor = 'var(--color-recording)';
+    }
+
     const currentTitle = this.editorTitle.textContent?.trim();
     const placeholder =
       this.editorTitle.getAttribute('placeholder') || 'Untitled Note';
@@ -458,6 +490,11 @@ class VoiceNotesApp {
       iconElement.classList.remove('fa-stop');
       iconElement.classList.add('fa-microphone');
     }
+    
+    if (this.sourcePanelRecordBtn) {
+        this.sourcePanelRecordBtn.innerHTML = '<i class="fas fa-microphone"></i> Start Recording Now';
+        this.sourcePanelRecordBtn.style.backgroundColor = ''; // Reset
+    }
 
     if (this.waveformDrawingId) {
       cancelAnimationFrame(this.waveformDrawingId);
@@ -478,51 +515,89 @@ class VoiceNotesApp {
   }
 
   /**
-   * Appends a finalized segment to the raw transcription container.
-   * Wraps it in a span with a unique ID for highlighting.
+   * Appends a finalized segment to the raw transcription container using Diarization blocks.
+   * @param text The text content
+   * @param speaker The speaker label ('You' or 'System')
    */
-  private appendRawSegment(text: string): void {
+  private appendTranscriptItem(text: string, speaker: string): void {
       if (!text || !text.trim()) return;
       
       this.rawTranscription.classList.remove('placeholder-active');
       
-      const span = document.createElement('span');
-      span.textContent = text + ' ';
-      span.className = 'transcript-segment';
-      span.dataset.timestamp = Date.now().toString();
-      
-      // Insert before interim span if it exists
-      if (this.rawInterimSpan && this.rawInterimSpan.parentNode === this.rawTranscription) {
-          this.rawTranscription.insertBefore(span, this.rawInterimSpan);
+      // Check if the last block is from the same speaker to append text
+      // We look at the children before the interim div (which is always last)
+      const children = Array.from(this.rawTranscription.children);
+      // Filter out interim if it exists
+      const blocks = children.filter(c => c !== this.rawInterimDiv);
+      const lastBlock = blocks.length > 0 ? blocks[blocks.length - 1] as HTMLElement : null;
+
+      if (lastBlock && lastBlock.dataset.speaker === speaker) {
+          // Append to existing block
+          const textContainer = lastBlock.querySelector('.segment-text');
+          if (textContainer) {
+              // Add a space if needed
+              textContainer.textContent = (textContainer.textContent || '') + ' ' + text;
+          }
       } else {
-          this.rawTranscription.appendChild(span);
-          // Re-append interim span to keep it at the end
-          this.ensureInterimSpan();
+          // Create new block
+          const block = document.createElement('div');
+          block.className = `transcript-block speaker-${speaker.toLowerCase()}`;
+          block.dataset.speaker = speaker;
+          
+          const label = document.createElement('div');
+          label.className = 'speaker-label';
+          // Icon based on speaker
+          const icon = speaker === 'You' ? '<i class="fas fa-microphone"></i>' : '<i class="fas fa-desktop"></i>';
+          label.innerHTML = `${icon} ${speaker}`;
+          
+          const textDiv = document.createElement('div');
+          textDiv.className = 'segment-text';
+          textDiv.textContent = text;
+          
+          block.appendChild(label);
+          block.appendChild(textDiv);
+          
+          // Insert before interim div if it exists
+          if (this.rawInterimDiv && this.rawInterimDiv.parentNode === this.rawTranscription) {
+              this.rawTranscription.insertBefore(block, this.rawInterimDiv);
+          } else {
+              this.rawTranscription.appendChild(block);
+          }
       }
+      
+      // Ensure interim is always at the bottom
+      this.ensureInterimContainer();
       
       this.rawTranscription.scrollTop = this.rawTranscription.scrollHeight;
   }
 
   /**
-   * Updates the interim span with temporary text.
+   * Updates the interim container with temporary text.
    */
   private updateInterimText(text: string): void {
-      this.ensureInterimSpan();
-      if (this.rawInterimSpan) {
-          this.rawInterimSpan.textContent = text;
+      this.ensureInterimContainer();
+      if (this.rawInterimDiv) {
+          this.rawInterimDiv.textContent = text ? `... ${text}` : '';
+          this.rawInterimDiv.style.display = text ? 'block' : 'none';
+          
           if (text) {
               this.rawTranscription.classList.remove('placeholder-active');
+              this.rawTranscription.scrollTop = this.rawTranscription.scrollHeight;
           }
-          this.rawTranscription.scrollTop = this.rawTranscription.scrollHeight;
       }
   }
 
-  private ensureInterimSpan(): void {
-      if (!this.rawInterimSpan || this.rawInterimSpan.parentNode !== this.rawTranscription) {
-          this.rawInterimSpan = document.createElement('span');
-          this.rawInterimSpan.className = 'interim';
-          this.rawInterimSpan.style.opacity = '0.6';
-          this.rawTranscription.appendChild(this.rawInterimSpan);
+  private ensureInterimContainer(): void {
+      if (!this.rawInterimDiv || this.rawInterimDiv.parentNode !== this.rawTranscription) {
+          this.rawInterimDiv = document.createElement('div');
+          this.rawInterimDiv.className = 'interim-block';
+          this.rawInterimDiv.style.display = 'none';
+          this.rawTranscription.appendChild(this.rawInterimDiv);
+      } else {
+          // Move to end if not already
+          if (this.rawTranscription.lastElementChild !== this.rawInterimDiv) {
+              this.rawTranscription.appendChild(this.rawInterimDiv);
+          }
       }
   }
 
@@ -531,17 +606,18 @@ class VoiceNotesApp {
    * Called when Gemini sends translation audio/text.
    */
   private highlightActiveSegment(): void {
-      const segments = this.rawTranscription.querySelectorAll('.transcript-segment');
+      const segments = this.rawTranscription.querySelectorAll('.transcript-block');
       if (segments.length === 0) return;
 
-      // Find the last segment (simplest heuristic for real-time sequential translation)
       const lastSegment = segments[segments.length - 1] as HTMLElement;
       
-      // Remove highlight from others (optional, or keep trail)
-      segments.forEach(seg => seg.classList.remove('active-translation'));
-      
-      // Highlight the active one
-      lastSegment.classList.add('active-translation');
+      // Highlight the active one (simple visual cue)
+      lastSegment.style.transition = 'none';
+      lastSegment.style.backgroundColor = 'var(--glass-highlight)';
+      setTimeout(() => {
+           lastSegment.style.transition = '';
+           lastSegment.style.backgroundColor = '';
+      }, 500);
       
       // Ensure it's visible
       lastSegment.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
@@ -620,10 +696,21 @@ class VoiceNotesApp {
       this.isWebSpeechActive = false;
       this.nextStartTime = 0;
       
+      // Determine Source Type and Device ID from Unified Dropdown
+      const sourceValue = this.unifiedSourceSelect.value;
+      let deviceId: string | undefined = undefined;
+
+      if (sourceValue === 'system') {
+          this.selectedSourceType = 'system';
+      } else {
+          this.selectedSourceType = 'mic';
+          deviceId = sourceValue !== 'default' ? sourceValue : undefined;
+      }
+      
       // Reset DOM for new session
       this.rawTranscription.innerHTML = '';
-      this.rawInterimSpan = null;
-      this.ensureInterimSpan();
+      this.rawInterimDiv = null;
+      this.ensureInterimContainer();
       this.translatedContent.innerHTML = '';
 
 
@@ -688,10 +775,9 @@ class VoiceNotesApp {
         }
       } else {
         // Microphone
-        const deviceId = this.deviceSelect.value;
         const constraints: MediaStreamConstraints = {
           audio: {
-            deviceId: deviceId && deviceId !== 'default' ? {exact: deviceId} : undefined,
+            deviceId: deviceId ? {exact: deviceId} : undefined,
             channelCount: 1,
             sampleRate: 16000, 
           },
@@ -700,7 +786,6 @@ class VoiceNotesApp {
         
         // --- Web Speech API Setup for Microphone ---
         if (('webkitSpeechRecognition' in window || 'SpeechRecognition' in window)) {
-           this.isWebSpeechActive = true;
            const SpeechRecognition = (window as any).webkitSpeechRecognition || (window as any).SpeechRecognition;
            this.recognition = new SpeechRecognition();
            this.recognition.continuous = true;
@@ -708,6 +793,7 @@ class VoiceNotesApp {
            this.recognition.lang = inputLangCode;
            
            this.recognition.onresult = (event: any) => {
+             console.log("WebSpeech Result Received"); // DEBUG
              let interim = '';
              let final = '';
              for (let i = event.resultIndex; i < event.results.length; ++i) {
@@ -719,7 +805,7 @@ class VoiceNotesApp {
              }
              
              if (final) {
-               this.appendRawSegment(final);
+               this.appendTranscriptItem(final, 'You');
                // Trigger Translation Pipeline if in Translation Mode
                // For Mic: WebSpeech -> Flash -> TTS
                if (this.selectedSourceType === 'mic' && isTranslationMode) {
@@ -737,6 +823,7 @@ class VoiceNotesApp {
            };
 
            this.recognition.onend = () => {
+             // Only attempt restart if we originally succeeded in starting and are still recording
              if (this.isRecording && this.isWebSpeechActive) {
                setTimeout(() => {
                    if (this.isRecording && this.isWebSpeechActive) {
@@ -751,6 +838,7 @@ class VoiceNotesApp {
 
            try {
              this.recognition.start();
+             this.isWebSpeechActive = true;
            } catch (e) {
              console.error("Failed to start WebSpeech", e);
              this.isWebSpeechActive = false; 
@@ -804,13 +892,15 @@ class VoiceNotesApp {
             // Stream audio to Gemini ONLY IF:
             // 1. It is 'system' source (we need live model to hear system audio).
             // 2. OR it is 'mic' source but NOT translating (assistant mode).
-            // IF 'mic' source AND translating, we DISABLE audio streaming to Live.
-            // Why? Because we use WebSpeech for input, and Live is just a TTS engine for output.
-            // Streaming audio would confuse it.
+            // 3. OR it is 'mic' source and WebSpeech FAILED (fallback mode).
+            // IF 'mic' source AND translating AND WebSpeech active, we DISABLE audio streaming to Live 
+            // because Live is just a TTS engine in that case.
             
-            const shouldStreamAudioToGemini = (this.selectedSourceType === 'system') || (!isTranslationMode);
+            const isMicFallback = (this.selectedSourceType === 'mic' && !this.isWebSpeechActive);
+            const shouldStreamAudioToGemini = (this.selectedSourceType === 'system') || (!isTranslationMode) || isMicFallback;
 
             if (shouldStreamAudioToGemini && this.sourceNode && this.processor && this.audioContext) {
+                console.log("Streaming Audio to Gemini (System or Fallback)");
                 this.sourceNode.connect(this.processor);
                 this.processor.connect(this.audioContext.destination);
                 
@@ -829,8 +919,10 @@ class VoiceNotesApp {
                     if (this.sessionPromise) {
                         this.sessionPromise.then(session => {
                             session.sendRealtimeInput({
-                                mimeType: "audio/pcm;rate=16000",
-                                data: base64Audio
+                                media: {
+                                    mimeType: "audio/pcm;rate=16000",
+                                    data: base64Audio
+                                }
                             });
                         });
                     }
@@ -871,14 +963,20 @@ class VoiceNotesApp {
       }
       
       // 2. Handle Text (Fallback or System Audio Translation)
-      // In Mic Mode, we ignore Gemini's text because we use Flash.
-      // In System Mode, we use the input/output transcription from Live API.
-      if (this.selectedSourceType === 'system') {
+      // If Mic Mode AND WebSpeech is active, we ignore Gemini's text because we use Flash/WebSpeech.
+      // If System Mode OR Mic Fallback, we use Live API transcription.
+      
+      const isMicFallback = (this.selectedSourceType === 'mic' && !this.isWebSpeechActive);
+      const shouldUseGeminiTranscription = (this.selectedSourceType === 'system') || isMicFallback;
+      
+      if (shouldUseGeminiTranscription) {
           
           // Handle Input Transcription (Raw Audio Source)
           const inputTranscript = message.serverContent?.inputTranscription?.text;
           if (inputTranscript) {
-              this.appendRawSegment(inputTranscript);
+              // Label as "You" if it's mic fallback, else "System"
+              const speakerLabel = isMicFallback ? 'You' : 'System';
+              this.appendTranscriptItem(inputTranscript, speakerLabel);
           }
 
           // Handle Output Transcription (Translated Text)
@@ -1003,8 +1101,8 @@ class VoiceNotesApp {
     };
     
     this.rawTranscription.innerHTML = '';
-    this.rawInterimSpan = null;
-    this.ensureInterimSpan();
+    this.rawInterimDiv = null;
+    this.ensureInterimContainer();
     this.translatedContent.innerHTML = '';
     
     this.editorTitle.textContent = '';

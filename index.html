@@ -55,29 +55,20 @@
             <div id="sourcePanel" class="note-content source-panel">
               <div class="source-group">
                 <h3><i class="fas fa-bullseye"></i> Audio Source</h3>
-                <p class="source-desc">Select where the audio should be captured from.</p>
+                <p class="source-desc">Select an input device or capture system audio.</p>
                 
-                <div class="input-grid">
-                  <div class="input-card selected" data-type="mic">
-                    <i class="fas fa-microphone-alt"></i>
-                    <span>Microphone</span>
-                    <small>Device Inputs</small>
-                  </div>
-                  <div class="input-card" data-type="system">
-                    <i class="fas fa-desktop"></i>
-                    <span>System / Tab</span>
-                    <small>YouTube, Zoom, Meet</small>
-                  </div>
-                </div>
-              </div>
-
-              <div class="source-group" id="deviceSelectionGroup">
-                <h3><i class="fas fa-sliders-h"></i> Input Device</h3>
                 <div class="select-wrapper">
-                  <select id="audioDeviceSelect">
-                    <option value="default">Default Microphone</option>
+                  <select id="unifiedAudioSourceSelect">
+                    <!-- Populated via JS: System Audio + Microphones -->
+                    <option value="system">System / Tab Audio (Zoom, YouTube, Meet)</option>
+                    <option disabled>──────────────</option>
+                    <option value="default">Microphone: Default</option>
                   </select>
                   <i class="fas fa-chevron-down"></i>
+                </div>
+                
+                <div class="source-info" id="systemAudioInfo" style="display: none; margin-top: 12px;">
+                    <p><i class="fas fa-info-circle"></i> <strong>System Audio Mode:</strong> When recording starts, select the <strong>Tab</strong> or <strong>Window</strong> you want to transcribe and ensure <strong>"Share Audio"</strong> is checked.</p>
                 </div>
               </div>
 
@@ -140,10 +131,13 @@
                   <i class="fas fa-chevron-down"></i>
                 </div>
               </div>
-
-              <div class="source-info" id="systemAudioInfo" style="display: none;">
-                <p><i class="fas fa-info-circle"></i> <strong>System Audio / URL:</strong> To transcribe a Zoom meeting, YouTube video, or any URL, select this option. When recording starts, choose the specific <strong>Tab</strong> or <strong>Window</strong> and ensure <strong>"Share Audio"</strong> is checked.</p>
+              
+              <div class="source-group" style="background: transparent; border: none; padding: 0;">
+                  <button id="sourcePanelRecordBtn" class="primary-button">
+                      <i class="fas fa-microphone"></i> Start Recording Now
+                  </button>
               </div>
+
             </div>
           </div>
         </div>
