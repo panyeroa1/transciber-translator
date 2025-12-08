@@ -19,7 +19,6 @@ interface Note {
 }
 
 class VoiceNotesApp {
-  private genAI: any;
   private recordButton: HTMLButtonElement;
   private sourcePanelRecordBtn: HTMLButtonElement;
   private recordingStatus: HTMLDivElement;
@@ -73,10 +72,6 @@ class VoiceNotesApp {
   private interimResult: string = '';
 
   constructor() {
-    this.genAI = new GoogleGenAI({
-      apiKey: process.env.API_KEY,
-    });
-
     this.recordButton = document.getElementById(
       'recordButton',
     ) as HTMLButtonElement;
@@ -655,7 +650,8 @@ class VoiceNotesApp {
    */
   private async translateTextWithFlash(text: string, targetLanguage: string): Promise<string> {
     try {
-      const response = await this.genAI.models.generateContent({
+      const client = new GoogleGenAI({ apiKey: process.env.API_KEY });
+      const response = await client.models.generateContent({
         model: MODEL_NAME, // gemini-2.5-flash
         contents: `Translate the following text to ${targetLanguage}. Return only the translated text, no markdown block quotes, no preamble. Text: "${text}"`,
       });
@@ -880,7 +876,8 @@ class VoiceNotesApp {
           outputAudioTranscription: {},
       };
 
-      this.sessionPromise = this.genAI.live.connect({
+      const client = new GoogleGenAI({ apiKey: process.env.API_KEY });
+      this.sessionPromise = client.live.connect({
         model: LIVE_MODEL,
         config: liveConfig,
         callbacks: {
